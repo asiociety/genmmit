@@ -1,0 +1,12 @@
+根据以下 git diff 生成一条 Conventional Commits 格式的 commit 消息。
+
+格式要求：
+- 类型：feat/fix/docs/style/refactor/test/chore
+- 格式：<type>(<scope>): <description>
+- scope 可选
+- description 用英文，小写开头，不加句号，不超过 50 字符
+
+只输出 commit 消息，不要使用代码块格式（不要加 ``` 标记），直接输出纯文本。
+
+---
+Diff:

@@ -1,0 +1,33 @@
+# genmmit configuration
+# Copy this file to ~/.config/genmmit/config and fill in your values
+
+# === API Settings (Required) ===
+# OpenAI-compatible API endpoint
+GENMMIT_API_URL="https://api.openai.com/v1/chat/completions"
+
+# Your API key
+GENMMIT_API_KEY="sk-your-api-key-here"
+
+# Model to use (required, no default)
+GENMMIT_MODEL="gpt-4o"
+
+# Request timeout in seconds (default: 30)
+GENMMIT_TIMEOUT=30
+
+# === Commit Style ===
+# Template filename in ~/.config/genmmit/templates/
+# Available: conventional.txt, simple.txt, angular.txt
+GENMMIT_TEMPLATE="conventional.txt"
+
+# Or use inline prompt (overrides GENMMIT_TEMPLATE)
+# GENMMIT_PROMPT="Generate a concise commit message in Chinese"
+
+# Temperature for generation (default: 0.3)
+# GENMMIT_TEMPERATURE=0.3
+
+# === Logging ===
+# Enable/disable logging (default: true)
+GENMMIT_LOG_ENABLED=true
+
+# Log level: error | warn | info | debug (default: error)
+GENMMIT_LOG_LEVEL="error"

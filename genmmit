@@ -1,0 +1,304 @@
+#!/usr/bin/env bash
+#
+# genmmit - AI-powered Git commit message generator
+# Usage: Copy to .git/hooks/prepare-commit-msg
+#
+
+set -euo pipefail
+
+# --- Constants ---
+readonly CONFIG_DIR="${HOME}/.config/genmmit"
+readonly GLOBAL_CONFIG="${CONFIG_DIR}/config"
+readonly LOG_FILE="${CONFIG_DIR}/error.log"
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly MAX_DIFF_CHARS=4000
+
+# --- Default values ---
+GENMMIT_API_URL="${GENMMIT_API_URL:-}"
+GENMMIT_API_KEY="${GENMMIT_API_KEY:-}"
+GENMMIT_MODEL="${GENMMIT_MODEL:-}"
+GENMMIT_TEMPLATE="${GENMMIT_TEMPLATE:-}"
+GENMMIT_TIMEOUT="${GENMMIT_TIMEOUT:-30}"
+GENMMIT_PROMPT="${GENMMIT_PROMPT:-}"
+GENMMIT_TEMPERATURE="${GENMMIT_TEMPERATURE:-0.3}"
+GENMMIT_LOG_ENABLED="${GENMMIT_LOG_ENABLED:-true}"
+GENMMIT_LOG_LEVEL="${GENMMIT_LOG_LEVEL:-error}"
+
+# --- Log levels ---
+declare -A LOG_LEVELS=([error]=0 [warn]=1 [info]=2 [debug]=3)
+
+# --- Logging ---
+log() {
+    local level="$1"
+    local message="$2"
+
+    [[ "${GENMMIT_LOG_ENABLED}" != "true" ]] && return 0
+
+    local current_level="${LOG_LEVELS[${GENMMIT_LOG_LEVEL}]:-0}"
+    local msg_level="${LOG_LEVELS[${level}]:-0}"
+
+    [[ "${msg_level}" -gt "${current_level}" ]] && return 0
+
+    local timestamp
+    timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+    local level_upper
+    level_upper="$(echo "${level}" | tr '[:lower:]' '[:upper:]')"
+
+    mkdir -p "${CONFIG_DIR}"
+    echo "[${timestamp}] [${level_upper}] ${message}" >> "${LOG_FILE}"
+}
+
+# --- Load config file ---
+load_config() {
+    local config_file="$1"
+    [[ -f "${config_file}" ]] || return 0
+
+    while IFS='=' read -r key value || [[ -n "${key}" ]]; do
+        # Skip comments and empty lines
+        [[ "${key}" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "${key}" ]] && continue
+
+        # Remove leading/trailing whitespace
+        key="$(echo "${key}" | xargs)"
+        value="$(echo "${value}" | xargs)"
+
+        # Remove surrounding quotes
+        value="${value#\"}"
+        value="${value%\"}"
+        value="${value#\'}"
+        value="${value%\'}"
+
+        # Only set if not already set by environment
+        case "${key}" in
+            GENMMIT_API_URL)
+                [[ -z "${GENMMIT_API_URL}" ]] && GENMMIT_API_URL="${value}"
+                ;;
+            GENMMIT_API_KEY)
+                [[ -z "${GENMMIT_API_KEY}" ]] && GENMMIT_API_KEY="${value}"
+                ;;
+            GENMMIT_MODEL)
+                [[ -z "${GENMMIT_MODEL}" ]] && GENMMIT_MODEL="${value}"
+                ;;
+            GENMMIT_TEMPLATE)
+                [[ -z "${GENMMIT_TEMPLATE}" ]] && GENMMIT_TEMPLATE="${value}"
+                ;;
+            GENMMIT_TIMEOUT)
+                [[ "${GENMMIT_TIMEOUT}" == "30" ]] && GENMMIT_TIMEOUT="${value}"
+                ;;
+            GENMMIT_PROMPT)
+                [[ -z "${GENMMIT_PROMPT}" ]] && GENMMIT_PROMPT="${value}"
+                ;;
+            GENMMIT_LOG_ENABLED)
+                [[ "${GENMMIT_LOG_ENABLED}" == "true" ]] && GENMMIT_LOG_ENABLED="${value}"
+                ;;
+            GENMMIT_LOG_LEVEL)
+                [[ "${GENMMIT_LOG_LEVEL}" == "error" ]] && GENMMIT_LOG_LEVEL="${value}"
+                ;;
+        esac
+    done < "${config_file}"
+}
+
+# --- Find template file ---
+find_template() {
+    local template_name="$1"
+
+    # If it's a path (contains /), expand ~ and return
+    if [[ "${template_name}" == *"/"* ]]; then
+        local expanded="${template_name/#\~/$HOME}"
+        if [[ -f "${expanded}" ]]; then
+            echo "${expanded}"
+            return 0
+        fi
+        return 1
+    fi
+
+    # Check user templates first
+    local user_template="${CONFIG_DIR}/templates/${template_name}"
+    if [[ -f "${user_template}" ]]; then
+        echo "${user_template}"
+        return 0
+    fi
+
+    # Check builtin templates (relative to script location, for non-hook usage)
+    local builtin_template="${SCRIPT_DIR}/templates/${template_name}"
+    if [[ -f "${builtin_template}" ]]; then
+        echo "${builtin_template}"
+        return 0
+    fi
+
+    return 1
+}
+
+# --- Build prompt ---
+build_prompt() {
+    local diff="$1"
+    local prompt=""
+
+    # Use inline prompt if set
+    if [[ -n "${GENMMIT_PROMPT}" ]]; then
+        prompt="${GENMMIT_PROMPT}"
+    else
+        # Find and read template
+        local template_file
+        if ! template_file="$(find_template "${GENMMIT_TEMPLATE}")"; then
+            log "error" "Template not found: ${GENMMIT_TEMPLATE}"
+            return 1
+        fi
+        prompt="$(cat "${template_file}")"
+    fi
+
+    echo "${prompt}${diff}"
+}
+
+# --- Call API ---
+call_api() {
+    local prompt="$1"
+
+    # Escape prompt for JSON
+    local escaped_prompt
+    escaped_prompt="$(echo "${prompt}" | jq -Rs .)"
+
+    local request_body
+    request_body=$(cat <<EOF
+{
+    "model": "${GENMMIT_MODEL}",
+    "messages": [
+        {"role": "user", "content": ${escaped_prompt}}
+    ],
+    "temperature": 0.3
+}
+EOF
+)
+
+    log "debug" "Request to ${GENMMIT_API_URL}"
+    log "debug" "Model: ${GENMMIT_MODEL}"
+
+    local response
+    local http_code
+
+    response=$(curl -s -w "\n%{http_code}" \
+        --max-time "${GENMMIT_TIMEOUT}" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer ${GENMMIT_API_KEY}" \
+        -d "${request_body}" \
+        "${GENMMIT_API_URL}" 2>&1) || {
+        log "error" "curl failed: ${response}"
+        return 1
+    }
+
+    http_code="$(echo "${response}" | tail -n1)"
+    response="$(echo "${response}" | sed '$d')"
+
+    log "debug" "Response (HTTP ${http_code}): ${response}"
+
+    if [[ "${http_code}" != "200" ]]; then
+        log "error" "API error: HTTP ${http_code}"
+        return 1
+    fi
+
+    # Extract message content
+    local content
+    content="$(echo "${response}" | jq -r '.choices[0].message.content // empty' 2>/dev/null)" || {
+        log "error" "Failed to parse response JSON"
+        return 1
+    }
+
+    if [[ -z "${content}" ]]; then
+        log "error" "Empty response from API"
+        return 1
+    fi
+
+    # Clean up the message (remove leading/trailing whitespace and quotes)
+    content="$(echo "${content}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//')"
+
+    echo "${content}"
+}
+
+# --- Main ---
+main() {
+    local commit_msg_file="${1:-}"
+    local commit_source="${2:-}"
+
+    # Skip if user provided message or merge commit
+    if [[ "${commit_source}" == "message" ]] || [[ "${commit_source}" == "merge" ]]; then
+        log "info" "Skipped: ${commit_source}"
+        exit 0
+    fi
+
+    # Load configs (global first, then project-level to override)
+    load_config "${GLOBAL_CONFIG}"
+    load_config ".genmmit"
+
+    # Reload from environment (highest priority)
+    GENMMIT_API_URL="${GENMMIT_API_URL:-}"
+    GENMMIT_API_KEY="${GENMMIT_API_KEY:-}"
+
+    # Check required config
+    if [[ -z "${GENMMIT_API_URL}" ]]; then
+        log "error" "Missing config: GENMMIT_API_URL not set"
+        exit 0
+    fi
+
+    if [[ -z "${GENMMIT_API_KEY}" ]]; then
+        log "error" "Missing config: GENMMIT_API_KEY not set"
+        exit 0
+    fi
+
+    if [[ -z "${GENMMIT_MODEL}" ]]; then
+        log "error" "Missing config: GENMMIT_MODEL not set"
+        exit 0
+    fi
+
+    # Check dependencies
+    if ! command -v curl &>/dev/null; then
+        log "error" "Dependency missing: curl"
+        exit 0
+    fi
+
+    if ! command -v jq &>/dev/null; then
+        log "error" "Dependency missing: jq"
+        exit 0
+    fi
+
+    # Get staged diff
+    local diff
+    diff="$(git diff --staged 2>/dev/null)" || {
+        log "error" "Failed to get git diff"
+        exit 0
+    }
+
+    if [[ -z "${diff}" ]]; then
+        log "info" "Skipped: no staged changes"
+        exit 0
+    fi
+
+    # Truncate if too large
+    local diff_len="${#diff}"
+    if [[ "${diff_len}" -gt "${MAX_DIFF_CHARS}" ]]; then
+        log "warn" "Diff truncated: ${diff_len} -> ${MAX_DIFF_CHARS} chars"
+        diff="${diff:0:${MAX_DIFF_CHARS}}"
+    fi
+
+    # Build prompt
+    local prompt
+    if ! prompt="$(build_prompt "${diff}")"; then
+        exit 0
+    fi
+
+    # Call API
+    local message
+    if ! message="$(call_api "${prompt}")"; then
+        exit 0
+    fi
+
+    # Write to commit message file
+    if [[ -n "${commit_msg_file}" ]]; then
+        echo "${message}" > "${commit_msg_file}"
+        log "info" "Commit message generated (${#message} chars)"
+    else
+        # If no file provided (manual run), just print
+        echo "${message}"
+    fi
+}
+
+main "$@"

@@ -1,0 +1,12 @@
+根据以下 git diff 生成 Angular 风格的 commit 消息。
+
+格式：<type>(<scope>): <subject>
+
+type: build|ci|docs|feat|fix|perf|refactor|test
+scope: 改动涉及的模块
+subject: 简短描述，英文，现在时，小写，不加句号
+
+只输出 commit 消息，不要使用代码块格式（不要加 ``` 标记），直接输出纯文本。
+
+---
+Diff:
