@@ -23,6 +23,7 @@ GENMMIT_PROMPT="${GENMMIT_PROMPT:-}"
 GENMMIT_TEMPERATURE="${GENMMIT_TEMPERATURE:-0.3}"
 GENMMIT_LOG_ENABLED="${GENMMIT_LOG_ENABLED:-true}"
 GENMMIT_LOG_LEVEL="${GENMMIT_LOG_LEVEL:-error}"
+GENMMIT_DIFF_CHARS="${GENMMIT_DIFF_CHARS:-4000}"
 
 # --- Log levels ---
 declare -A LOG_LEVELS=([error]=0 [warn]=1 [info]=2 [debug]=3)
@@ -88,11 +89,17 @@ load_config() {
             GENMMIT_PROMPT)
                 [[ -z "${GENMMIT_PROMPT}" ]] && GENMMIT_PROMPT="${value}"
                 ;;
+            GENMMIT_TEMPERATURE)
+                [[ -z "${GENMMIT_TEMPERATURE}" ]] && GENMMIT_TEMPERATURE="${value}"
+                ;;
             GENMMIT_LOG_ENABLED)
                 [[ "${GENMMIT_LOG_ENABLED}" == "true" ]] && GENMMIT_LOG_ENABLED="${value}"
                 ;;
             GENMMIT_LOG_LEVEL)
                 [[ "${GENMMIT_LOG_LEVEL}" == "error" ]] && GENMMIT_LOG_LEVEL="${value}"
+                ;;
+            GENMMIT_DIFF_CHARS)
+                [[ -z "${GENMMIT_DIFF_CHARS}" ]] && GENMMIT_DIFF_CHARS="${value}"
                 ;;
         esac
     done < "${config_file}"
@@ -165,7 +172,7 @@ call_api() {
     "messages": [
         {"role": "user", "content": ${escaped_prompt}}
     ],
-    "temperature": 0.3
+    "temperature": ${GENMMIT_TEMPERATURE}
 }
 EOF
 )
@@ -272,11 +279,13 @@ main() {
         exit 0
     fi
 
-    # Truncate if too large
-    local diff_len="${#diff}"
-    if [[ "${diff_len}" -gt "${MAX_DIFF_CHARS}" ]]; then
-        log "warn" "Diff truncated: ${diff_len} -> ${MAX_DIFF_CHARS} chars"
-        diff="${diff:0:${MAX_DIFF_CHARS}}"
+    # Truncate if too large (unless GENMMIT_DIFF_CHARS is 0)
+    if [[ "${GENMMIT_DIFF_CHARS}" -ne 0 ]]; then
+        local diff_len="${#diff}"
+        if [[ "${diff_len}" -gt "${GENMMIT_DIFF_CHARS}" ]]; then
+            log "warn" "Diff truncated: ${diff_len} -> ${GENMMIT_DIFF_CHARS} chars"
+            diff="${diff:0:${GENMMIT_DIFF_CHARS}}"
+        fi
     fi
 
     # Build prompt

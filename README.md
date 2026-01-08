@@ -46,6 +46,8 @@ chmod +x ~/.config/git/hooks/prepare-commit-msg
 
 ## 配置
 
+配置优先级（从高到低）：**环境变量** > **项目 `.genmmit`** > **全局 `~/.config/genmmit/config`**
+
 ### 全局配置 `~/.config/genmmit/config`
 
 ```bash
@@ -54,15 +56,18 @@ GENMMIT_API_URL="https://api.openai.com/v1/chat/completions"
 GENMMIT_API_KEY="sk-your-api-key"
 GENMMIT_MODEL="gpt-4o"
 
-# 模板（可选，默认 conventional.txt）
-GENMMIT_TEMPLATE="conventional.txt"
+# 模板（必填，二选一）
+GENMMIT_TEMPLATE="conventional.txt"  # 使用模板文件
+# GENMMIT_PROMPT="用一句话描述改动"  # 或使用内联 prompt
 
-# 超时秒数（可选，默认 30）
-GENMMIT_TIMEOUT=30
+# 可选配置
+GENMMIT_TIMEOUT=30           # API 超时秒数（默认 30）
+GENMMIT_TEMPERATURE=0.3      # 模型温度（默认 0.3）
+GENMMIT_DIFF_CHARS=4000      # diff 最大字符数（默认 4000，0 表示不限制）
 
-# 日志（可选）
-GENMMIT_LOG_ENABLED=true
-GENMMIT_LOG_LEVEL="error"  # error | warn | info | debug
+# 日志
+GENMMIT_LOG_ENABLED=true     # 是否启用日志（默认 true）
+GENMMIT_LOG_LEVEL="error"    # 日志级别：error | warn | info | debug（默认 error）
 ```
 
 ### 项目级配置 `.genmmit`
@@ -84,6 +89,23 @@ GENMMIT_PROMPT="用一句话描述这次改动，中文，不超过 30 字"
 ```bash
 GENMMIT_TEMPLATE="angular.txt" git commit
 ```
+
+### 完整配置项说明
+
+| 配置项 | 必填 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `GENMMIT_API_URL` | 是 | 无 | OpenAI 兼容 API 端点 |
+| `GENMMIT_API_KEY` | 是 | 无 | API 密钥 |
+| `GENMMIT_MODEL` | 是 | 无 | 模型名称（如 `gpt-4o`） |
+| `GENMMIT_TEMPLATE` | 否* | 无 | 模板文件名或路径 |
+| `GENMMIT_PROMPT` | 否* | 无 | 内联 prompt（与 TEMPLATE 二选一） |
+| `GENMMIT_TIMEOUT` | 否 | `30` | API 请求超时秒数 |
+| `GENMMIT_TEMPERATURE` | 否 | `0.3` | 模型温度（0-2） |
+| `GENMMIT_DIFF_CHARS` | 否 | `4000` | diff 最大字符数（0 表示不限制） |
+| `GENMMIT_LOG_ENABLED` | 否 | `true` | 是否启用日志 |
+| `GENMMIT_LOG_LEVEL` | 否 | `error` | 日志级别（error/warn/info/debug） |
+
+\* `GENMMIT_TEMPLATE` 和 `GENMMIT_PROMPT` 必须至少配置一个
 
 ## 内置模板
 

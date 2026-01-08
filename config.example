@@ -15,19 +15,27 @@ GENMMIT_MODEL="gpt-4o"
 GENMMIT_TIMEOUT=30
 
 # === Commit Style ===
-# Template filename in ~/.config/genmmit/templates/
-# Available: conventional.txt, simple.txt, angular.txt
+# Template filename (searches in ~/.config/genmmit/templates/ and script dir)
+# Available builtin templates: conventional.txt, simple.txt, angular.txt
+# Or use absolute path: /path/to/custom.txt
+# Or use home path: ~/my-templates/custom.txt
 GENMMIT_TEMPLATE="conventional.txt"
 
-# Or use inline prompt (overrides GENMMIT_TEMPLATE)
+# Or use inline prompt (overrides GENMMIT_TEMPLATE if set)
 # GENMMIT_PROMPT="Generate a concise commit message in Chinese"
 
-# Temperature for generation (default: 0.3)
+# Temperature for generation (default: 0.3, range: 0.0-2.0)
 # GENMMIT_TEMPERATURE=0.3
+
+# === Diff Handling ===
+# Maximum diff characters to send to API (default: 4000)
+# Set to 0 to disable truncation (use with large context models)
+# GENMMIT_DIFF_CHARS=4000
 
 # === Logging ===
 # Enable/disable logging (default: true)
 GENMMIT_LOG_ENABLED=true
 
 # Log level: error | warn | info | debug (default: error)
+# Log file location: ~/.config/genmmit/error.log
 GENMMIT_LOG_LEVEL="error"
