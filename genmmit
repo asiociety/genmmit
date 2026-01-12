@@ -268,11 +268,21 @@ main() {
     fi
 
     # Get staged diff
+    # For amend (commit_source == "commit"), compare against HEAD~1 to include
+    # both the previous commit's changes and new staged changes
     local diff
-    diff="$(git diff --staged 2>/dev/null)" || {
-        log "error" "Failed to get git diff"
-        exit 0
-    }
+    if [[ "${commit_source}" == "commit" ]]; then
+        diff="$(git diff HEAD~1 --cached 2>/dev/null)" || {
+            log "error" "Failed to get git diff for amend"
+            exit 0
+        }
+        log "info" "Amend detected: using HEAD~1 as diff base"
+    else
+        diff="$(git diff --staged 2>/dev/null)" || {
+            log "error" "Failed to get git diff"
+            exit 0
+        }
+    fi
 
     if [[ -z "${diff}" ]]; then
         log "info" "Skipped: no staged changes"
