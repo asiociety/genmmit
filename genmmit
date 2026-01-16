@@ -11,7 +11,6 @@ readonly CONFIG_DIR="${HOME}/.config/genmmit"
 readonly GLOBAL_CONFIG="${CONFIG_DIR}/config"
 readonly LOG_FILE="${CONFIG_DIR}/error.log"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly MAX_DIFF_CHARS=4000
 
 # --- Default values ---
 GENMMIT_API_URL="${GENMMIT_API_URL:-}"
@@ -139,6 +138,7 @@ find_template() {
 # --- Build prompt ---
 build_prompt() {
     local diff="$1"
+    local original_msg="${2:-}"  # 可选参数，amend 时传入
     local prompt=""
 
     # Use inline prompt if set
@@ -152,6 +152,19 @@ build_prompt() {
             return 1
         fi
         prompt="$(cat "${template_file}")"
+    fi
+
+    # amend 场景：在模板前插入指令
+    if [[ -n "${original_msg}" ]]; then
+        local amend_prefix="You are amending an existing commit. Original message:
+---
+${original_msg}
+---
+Keep the original message structure if the new changes are minor additions.
+Only rewrite completely if the changes fundamentally alter the commit's purpose.
+
+"
+        prompt="${amend_prefix}${prompt}"
     fi
 
     echo "${prompt}${diff}"
@@ -268,25 +281,37 @@ main() {
     fi
 
     # Get staged diff
-    # For amend (commit_source == "commit"), compare against HEAD~1 to include
-    # both the previous commit's changes and new staged changes
     local diff
+    local original_msg=""
+
     if [[ "${commit_source}" == "commit" ]]; then
-        diff="$(git diff HEAD~1 --cached 2>/dev/null)" || {
+        # 获取原 commit message
+        original_msg="$(git log -1 --format=%B 2>/dev/null)" || original_msg=""
+
+        # 只获取新增的 diff（相对于 HEAD）
+        diff="$(git diff HEAD --cached 2>/dev/null)" || {
             log "error" "Failed to get git diff for amend"
             exit 0
         }
-        log "info" "Amend detected: using HEAD~1 as diff base"
+
+        # 新增 diff 为空 → 保留原 message，直接退出
+        if [[ -z "${diff}" ]]; then
+            log "info" "Amend: no new changes, keeping original message"
+            exit 0
+        fi
+
+        log "info" "Amend detected: using incremental diff"
     else
+        # 普通 commit（原逻辑）
         diff="$(git diff --staged 2>/dev/null)" || {
             log "error" "Failed to get git diff"
             exit 0
         }
-    fi
 
-    if [[ -z "${diff}" ]]; then
-        log "info" "Skipped: no staged changes"
-        exit 0
+        if [[ -z "${diff}" ]]; then
+            log "info" "Skipped: no staged changes"
+            exit 0
+        fi
     fi
 
     # Truncate if too large (unless GENMMIT_DIFF_CHARS is 0)
@@ -298,9 +323,9 @@ main() {
         fi
     fi
 
-    # Build prompt
+    # Build prompt（传入 original_msg）
     local prompt
-    if ! prompt="$(build_prompt "${diff}")"; then
+    if ! prompt="$(build_prompt "${diff}" "${original_msg}")"; then
         exit 0
     fi
 
