@@ -156,12 +156,14 @@ build_prompt() {
 
     # amend 场景：在模板前插入指令
     if [[ -n "${original_msg}" ]]; then
-        local amend_prefix="You are amending an existing commit. Original message:
+        local amend_prefix="You are amending an existing commit. Current message:
 ---
 ${original_msg}
 ---
-Keep the original message structure if the new changes are minor additions.
-Only rewrite completely if the changes fundamentally alter the commit's purpose.
+IMPORTANT: Preserve the current message style and structure as much as possible.
+- If changes are minor refinements, keep the original message with minimal edits.
+- Only rewrite if the diff fundamentally changes the commit's purpose or scope.
+- Maintain the same formatting, tone, and level of detail as the current message.
 
 "
         prompt="${amend_prefix}${prompt}"
@@ -285,22 +287,23 @@ main() {
     local original_msg=""
 
     if [[ "${commit_source}" == "commit" ]]; then
-        # 获取原 commit message
+        # 获取当前 commit message（作为样式参考）
         original_msg="$(git log -1 --format=%B 2>/dev/null)" || original_msg=""
 
-        # 只获取新增的 diff（相对于 HEAD）
-        diff="$(git diff HEAD --cached 2>/dev/null)" || {
+        # 对比最终状态和原始 commit（HEAD^ vs staged）
+        # 只包含实质性的变化，不包含中间的反复修改
+        diff="$(git diff HEAD^ --cached 2>/dev/null)" || {
             log "error" "Failed to get git diff for amend"
             exit 0
         }
 
-        # 新增 diff 为空 → 保留原 message，直接退出
+        # 如果最终状态和原始 commit 一样，保留当前 message
         if [[ -z "${diff}" ]]; then
-            log "info" "Amend: no new changes, keeping original message"
+            log "info" "Amend: no changes from original commit, keeping current message"
             exit 0
         fi
 
-        log "info" "Amend detected: using incremental diff"
+        log "info" "Amend detected: comparing final state with original commit (HEAD^)"
     else
         # 普通 commit（原逻辑）
         diff="$(git diff --staged 2>/dev/null)" || {

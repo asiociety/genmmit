@@ -31,18 +31,28 @@ genmmit (main script) → Git hook (prepare-commit-msg)
 1. Check `commit_source` - skip if `message` or `merge`
 2. Load configs: global → project `.genmmit` → env vars
 3. Validate: `GENMMIT_API_URL`, `GENMMIT_API_KEY`, `GENMMIT_MODEL` required
-4. Get `git diff --staged`, truncate to `GENMMIT_DIFF_CHARS` (default 4000, 0=disable)
-5. Build prompt: inline `GENMMIT_PROMPT` or template file + diff
-6. Call API, parse `choices[0].message.content`
-7. Write to commit message file (or stdout if no file)
+4. Get git diff:
+   - **Normal commit:** `git diff --staged`
+   - **Amend (`commit_source=commit`):** `git diff HEAD^ --cached` - compares final state with original commit (not intermediate amend), avoiding token waste on reverted changes
+5. Truncate to `GENMMIT_DIFF_CHARS` (default 4000, 0=disable)
+6. Build prompt:
+   - Inline `GENMMIT_PROMPT` or template file + diff
+   - **Amend:** Inject current message and instructions to preserve style/structure
+7. Call API, parse `choices[0].message.content`
+8. Write to commit message file (or stdout if no file)
 
 **Silent failure:** All errors `exit 0` to avoid blocking commits.
+
+**Amend behavior:** When amending, the script compares the final staged state against the original commit (HEAD^), not the previous amend state (HEAD). This prevents AI from generating misleading "revert" messages when you fix mistakes. The AI receives the current message and is instructed to preserve its style unless changes are substantial.
 
 ## Testing
 
 ```bash
-# Test script directly (stages changes first)
+# Test normal commit (stages changes first)
 git add -A && ./genmmit /tmp/test-msg && cat /tmp/test-msg
+
+# Test amend behavior (requires existing commit)
+git add -A && ./genmmit /tmp/test-msg commit && cat /tmp/test-msg
 
 # Debug with trace
 bash -x ./genmmit /tmp/test-msg
